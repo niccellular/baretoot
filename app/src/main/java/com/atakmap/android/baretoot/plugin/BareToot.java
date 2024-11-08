@@ -173,7 +173,7 @@ public class BareToot implements IPlugin,
                                 Toast.makeText(MapView.getMapView().getContext(), "Connected", Toast.LENGTH_SHORT).show();
                                 connect.setText(connected ? "Disconnect" : "Connect");
                                 try {
-                                    status.setText("*** Local XBee Device Details ***\n[+] Node ID: " + myXBeeDevice.getNodeID() +"\n[+] Network ID: " + bytesToHex(myXBeeDevice.getPANID()) + "\n[+] Address: " + myXBeeDevice.get64BitAddress().toString() +"\n[+] TX Power: " + myXBeeDevice.getPowerLevel());
+                                    status.setText("*** Local XBee Device Details ***\n[+] Node ID: " + myXBeeDevice.getNodeID() +"\n[+] Network ID: 0x" + bytesToHex(myXBeeDevice.getPANID()) + "\n[+] Address: " + myXBeeDevice.get64BitAddress().toString() +"\n[+] TX Power: " + myXBeeDevice.getPowerLevel());
                                 } catch (XBeeException e) {
                                     e.printStackTrace();
                                 }
@@ -461,8 +461,9 @@ public class BareToot implements IPlugin,
             try {
                 myXBeeDevice.applyChanges();
                 myXBeeDevice.writeChanges();
-                status.setText("*** Local XBee Device Details ***\n[+] Node ID: " + myXBeeDevice.getNodeID() +"\n[+] Network ID: " + bytesToHex(myXBeeDevice.getPANID()) + "\n[+] Address: " + myXBeeDevice.get64BitAddress().toString() +"\n[+] TX Power: " + myXBeeDevice.getPowerLevel());
-                myXBeeDevice.getNetwork().startDiscoveryProcess();
+                status.setText("*** Local XBee Device Details ***\n[+] Node ID: " + myXBeeDevice.getNodeID() +"\n[+] Network ID: 0x" + bytesToHex(myXBeeDevice.getPANID()) + "\n[+] Address: " + myXBeeDevice.get64BitAddress().toString() +"\n[+] TX Power: " + myXBeeDevice.getPowerLevel());
+                if (!myXBeeDevice.getNetwork().isDiscoveryRunning())
+                    myXBeeDevice.getNetwork().startDiscoveryProcess();
             } catch (XBeeException e) {
                 e.printStackTrace();
             }
