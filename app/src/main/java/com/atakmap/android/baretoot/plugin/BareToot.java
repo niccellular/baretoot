@@ -189,7 +189,7 @@ public class BareToot implements IPlugin,
                     }).start();
                 }
             });
-/*
+
             // TODO: Make this a plugin preference
             // run thread to discover new devices
             if (scheduleTaskExecutor.isShutdown()) {
@@ -200,9 +200,8 @@ public class BareToot implements IPlugin,
                     if (myXBeeDevice.getNetwork().isDiscoveryRunning())
                         return;
                     myXBeeDevice.getNetwork().startDiscoveryProcess();
-                }, 0, 30, TimeUnit.MINUTES);
+                }, 0, 15, TimeUnit.MINUTES);
             }
- */
         }
     }
 
