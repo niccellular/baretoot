@@ -7,17 +7,17 @@ import android.os.Bundle;
 
 import com.atakmap.android.preference.PluginPreferenceFragment;
 
-public class BareTootPluginPreferenceFragment extends PluginPreferenceFragment {
+public class PluginPreferencesFragment extends PluginPreferenceFragment {
 
     @SuppressLint("StaticFieldLeak")
     private static Context pluginContext;
 
-    public BareTootPluginPreferenceFragment() {
+    public PluginPreferencesFragment() {
         super(pluginContext, R.xml.preferences);
     }
 
     @SuppressLint("ValidFragment")
-    public BareTootPluginPreferenceFragment(final Context pluginContext) {
+    public PluginPreferencesFragment(final Context pluginContext) {
         super(pluginContext, R.xml.preferences);
         this.pluginContext = pluginContext;
     }

@@ -3,7 +3,7 @@
     <!-- App -->
     <string name="app_name">Bare Toot Plugin</string>
     <!-- description -->
-    <string name="app_desc">This plugin can leverage the Digi XBEE SX Development Kit</string>
+    <string name="app_desc">This plugin can leverage the Digi XBee modules over USB</string>
 
 
     <string name="preferences_title">BareToot Preferences</string>

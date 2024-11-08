@@ -109,8 +109,6 @@ def supportedFlavors =
 ]
 
 android {
-    compileSdkVersion 33
-    buildToolsVersion "30.0.3"
 
     bundle {
         storeArchive {
@@ -224,8 +222,9 @@ android {
     }
 
     defaultConfig {
-        minSdkVersion 33
-        targetSdkVersion 33
+        compileSdkVersion 32
+        minSdkVersion 28
+        targetSdkVersion 32
 
         def runTasks = gradle.startParameter.taskNames
         if(runTasks.toString().contains('bundle')) {

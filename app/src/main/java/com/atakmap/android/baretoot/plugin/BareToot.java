@@ -33,6 +33,7 @@ import com.digi.xbee.api.models.XBeeMessage;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
 import java.util.Locale;
@@ -52,6 +53,7 @@ import gov.tak.platform.marshal.MarshalManager;
 
 public class BareToot implements IPlugin,
         CommsMapComponent.PreSendProcessor,
+        SharedPreferences.OnSharedPreferenceChangeListener,
         IDiscoveryListener,
         IDataReceiveListener {
 
@@ -72,7 +74,6 @@ public class BareToot implements IPlugin,
     private BareTootSender baretootSender;
     private SharedPreferences prefs;
     private SharedPreferences.Editor editor;
-    private int mpSize = 0;
     public BareToot(IServiceController serviceController) {
         this.serviceController = serviceController;
         final PluginContextProvider ctxProvider = serviceController
@@ -102,20 +103,21 @@ public class BareToot implements IPlugin,
                 })
                 .build();
 
-
+        // register the plugin preferences
         ToolsPreferenceFragment.register(
                 new ToolsPreferenceFragment.ToolPreference(
                         pluginContext.getString(R.string.preferences_title),
                         pluginContext.getString(R.string.preferences_summary),
                         pluginContext.getString(R.string.baretoot_preferences),
                         pluginContext.getResources().getDrawable(R.drawable.ic_launcher),
-                        new BareTootPluginPreferenceFragment(
+                        new PluginPreferencesFragment(
                                 pluginContext)));
 
         mainView = PluginLayoutInflater.inflate(pluginContext, R.layout.main_layout, null);
         CommsMapComponent.getInstance().registerPreSendProcessor(this);
         URIContentManager.getInstance().registerSender(baretootSender = new BareTootSender(MapView.getMapView(), pluginContext));
         prefs = PreferenceManager.getDefaultSharedPreferences(MapView.getMapView().getContext());
+        prefs.registerOnSharedPreferenceChangeListener(this);
         editor = prefs.edit();
     }
 
@@ -145,7 +147,6 @@ public class BareToot implements IPlugin,
                     // close the connection
                     if (myXBeeDevice.isOpen()) {
                         myXBeeDevice.getNetwork().stopDiscoveryProcess();
-                        scheduleTaskExecutor.shutdownNow();
                         myXBeeDevice.close();
                     }
                     connected = false;
@@ -171,7 +172,11 @@ public class BareToot implements IPlugin,
                             ((Activity) MapView.getMapView().getContext()).runOnUiThread(() -> {
                                 Toast.makeText(MapView.getMapView().getContext(), "Connected", Toast.LENGTH_SHORT).show();
                                 connect.setText(connected ? "Disconnect" : "Connect");
-                                status.setText("Local XBee Device Details:\nNode ID: " + myXBeeDevice.getNodeID() + "\n" + "Firmware: " + myXBeeDevice.getFirmwareVersion() + "\n" + "Address: " + myXBeeDevice.get64BitAddress().toString());
+                                try {
+                                    status.setText("*** Local XBee Device Details ***\n[+] Node ID: " + myXBeeDevice.getNodeID() +"\n[+] Network ID: " + bytesToHex(myXBeeDevice.getPANID()) + "\n[+] Address: " + myXBeeDevice.get64BitAddress().toString() +"\n[+] TX Power: " + myXBeeDevice.getPowerLevel());
+                                } catch (XBeeException e) {
+                                    e.printStackTrace();
+                                }
                                 Toast.makeText(MapView.getMapView().getContext(), "Discovery in progress...", Toast.LENGTH_SHORT).show();
                                 discovered.setText("Discovery in progress...");
                             });
@@ -184,7 +189,7 @@ public class BareToot implements IPlugin,
                     }).start();
                 }
             });
-
+/*
             // TODO: Make this a plugin preference
             // run thread to discover new devices
             if (scheduleTaskExecutor.isShutdown()) {
@@ -197,6 +202,7 @@ public class BareToot implements IPlugin,
                     myXBeeDevice.getNetwork().startDiscoveryProcess();
                 }, 0, 30, TimeUnit.MINUTES);
             }
+ */
         }
     }
 
@@ -206,13 +212,15 @@ public class BareToot implements IPlugin,
         if (uiService == null)
             return;
 
-        URIContentManager.getInstance().unregisterSender(baretootSender);
         uiService.removeToolbarItem(toolbarItem);
+        URIContentManager.getInstance().unregisterSender(baretootSender);
         scheduleTaskExecutor.shutdownNow();
         if (myXBeeDevice.isOpen())
             myXBeeDevice.close();
         editor.putBoolean("plugin_baretoot_file_transfer", false);
         editor.apply();
+        prefs.unregisterOnSharedPreferenceChangeListener(this);
+        ToolsPreferenceFragment.unregister(pluginContext.getString(R.string.preferences_title));
     }
 
     private void showPane() {
@@ -264,7 +272,7 @@ public class BareToot implements IPlugin,
                     // split data into 256 byte strings
                     for (int i = 0; i < data.length(); i += 256) {
                         String chunk = data.substring(i, Math.min(data.length(), i + 256));
-                        myXBeeDevice.sendBroadcastData(chunk.getBytes());
+                        myXBeeDevice.sendBroadcastData(chunk.getBytes(StandardCharsets.UTF_8));
                     }
                 } catch (XBeeException e) {
                     Log.e(TAG, "Error sending data to XBee device", e);
@@ -290,6 +298,17 @@ public class BareToot implements IPlugin,
         for (int i = 0; i < b.length; i++)
             result[a.length + i] = b[i];
         return result;
+    }
+
+    private static final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
+    public static String bytesToHex(byte[] bytes) {
+        char[] hexChars = new char[bytes.length * 2];
+        for (int j = 0; j < bytes.length; j++) {
+            int v = bytes[j] & 0xFF;
+            hexChars[j * 2] = HEX_ARRAY[v >>> 4];
+            hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
+        }
+        return new String(hexChars);
     }
 
     @Override
@@ -376,5 +395,77 @@ public class BareToot implements IPlugin,
 
     public static XBeeDevice getBeeDevice() {
         return myXBeeDevice;
+    }
+
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        if (key == null) return;
+        if (!connected) return;
+        boolean updateStatus = false;
+
+        switch (key) {
+            case "plugin_baretoot_tx_power": {
+                String rate = prefs.getString("plugin_baretoot_tx_power", "0");
+                Log.d(TAG, "TX Power: " + rate);
+                try {
+                    switch(rate) {
+                        case "0":
+                            myXBeeDevice.setParameter("PL", new byte[] {0x0});
+                            break;
+                        case "1":
+                            myXBeeDevice.setParameter("PL", new byte[] {0x1});
+                            break;
+                        case "2":
+                            myXBeeDevice.setParameter("PL", new byte[] {0x2});
+                            break;
+                    }
+                    updateStatus = true;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return;
+                }
+                break;
+            }
+            case "plugin_baretoot_encryption_key":
+                String aes = prefs.getString("plugin_baretoot_encryption_key", "atakatak");
+                Log.d(TAG, "Encryption Key: " + aes);
+                // Hash the user key to make sure its 32 bytes
+                byte[] hash;
+                try {
+                    java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+                    hash = digest.digest(aes.getBytes(StandardCharsets.UTF_8));
+                    myXBeeDevice.setParameter("EE", new byte[] {0x1});
+                    myXBeeDevice.setParameter("KY", hash);
+                    updateStatus = true;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return;
+                }
+                break;
+            case "plugin_baretoot_network_id": {
+                String id = prefs.getString("plugin_baretoot_network_id", "4242");
+                Log.d(TAG, "Network ID: " + id);
+                ByteBuffer buffer = ByteBuffer.allocate(2);
+                try {
+                    myXBeeDevice.setParameter("ID", buffer.putShort(Short.parseShort(id)).array());
+                    updateStatus = true;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return;
+                }
+                break;
+            }
+        }
+
+        if (updateStatus) {
+            try {
+                myXBeeDevice.applyChanges();
+                myXBeeDevice.writeChanges();
+                status.setText("*** Local XBee Device Details ***\n[+] Node ID: " + myXBeeDevice.getNodeID() +"\n[+] Network ID: " + bytesToHex(myXBeeDevice.getPANID()) + "\n[+] Address: " + myXBeeDevice.get64BitAddress().toString() +"\n[+] TX Power: " + myXBeeDevice.getPowerLevel());
+                myXBeeDevice.getNetwork().startDiscoveryProcess();
+            } catch (XBeeException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }

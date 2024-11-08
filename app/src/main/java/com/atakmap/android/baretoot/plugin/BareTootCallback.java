@@ -51,12 +51,12 @@ public class BareTootCallback implements SaveAndSendCallback {
                     editor.apply();
                     return;
                 } else {
-                    byte[] fileData;
                     int mpSize = (int) FileSystemUtils.getFileSize(file);
+                    byte[] fileData = new byte[mpSize];
                     byte[] header = String.format(Locale.ENGLISH,"TOOT:%d:", mpSize).getBytes(StandardCharsets.UTF_8);
                     Log.d(TAG, "File size: " + mpSize);
                     try (FileInputStream fis = new FileInputStream(file)) {
-                        fileData = fis.readNBytes(mpSize);
+                        fis.read(fileData, 0, mpSize);
                     } catch (IOException e) {
                         e.printStackTrace();
                         return;
@@ -66,11 +66,6 @@ public class BareTootCallback implements SaveAndSendCallback {
                         Log.d(TAG, "Failed to read file");
                         return;
                     }
-                    // join baretoot header and fileData into single byte array
-                    byte[] data = new byte[header.length + fileData.length];
-                    for (int i = 0; i < data.length; ++i)
-                        data[i] = i < header.length ? header[i] : fileData[i - header.length];
-
                     new Thread(() -> {
                         // ready to send file
                         boolean error = false;
