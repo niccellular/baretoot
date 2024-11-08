@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <PreferenceCategory android:title="@string/preferences_title" />
+    <com.atakmap.android.gui.PanSwitchPreference
+        android:key="plugin_baretoot_server"
+        android:title="Enable relay to server"
+        android:summary="If enabled, messages from Meshtastic will relay to connected TAK servers"
+        android:dialogTitle="Enable relay to server"
+        android:defaultValue="false"/>
+    <com.atakmap.android.gui.PanSwitchPreference
+        android:key="plugin_baretoot_from_server"
+        android:title="Enable relay from server"
+        android:summary="If enabled, messages from TAK Server will relay to Meshtastic (PLI/Chat only)"
+        android:dialogTitle="Enable relay from server"
+        android:defaultValue="false"/>
+    <com.atakmap.android.gui.PanSwitchPreference
+        android:key="plugin_baretoot_tracker"
+        android:title="Show all Meshtastic devices"
+        android:summary="If enabled, all Meshtastic devices will be shown on the map"
+        android:dialogTitle="Show all Meshtastic devices"
+        android:defaultValue="false"/>
+    <com.atakmap.android.gui.PanSwitchPreference
+        android:key="plugin_baretoot_nogps"
+        android:title="Don't show Meshtastic devices without GPS"
+        android:summary="If enabled, Meshtastic devices without GPS will not be shown on the map"
+        android:dialogTitle="Don't show Meshtastic devices without GPS"
+        android:defaultValue="false"/>
+    <com.atakmap.android.gui.PanSwitchPreference
+        android:key="plugin_baretoot_self"
+        android:title="Do not show your local Meshtastic node"
+        android:summary="If enabled, your local Meshtastic node will not be shown on the map"
+        android:dialogTitle="Do not show your local Meshtastic node"
+        android:dependency="plugin_baretoot_tracker"
+        android:defaultValue="false"/>
+    <com.atakmap.android.gui.PanSwitchPreference
+        android:key="plugin_baretoot_rate"
+        android:title="Enable reporting rate controls"
+        android:summary="If enabled, ATAK will switch to Constant reporting mode"
+        android:dialogTitle="Enable reporting rate controls"
+        android:defaultValue="false"/>
+    <com.atakmap.android.gui.PanListPreference
+        android:key="plugin_baretoot_rate_value"
+        android:title="Reporting rate"
+        android:summary="Select ATAK's constant reporting rate in minutes"
+        android:dialogTitle="Reporting rate"
+        android:entries="@array/rates"
+        android:entryValues="@array/rate_values"
+        android:dependency="plugin_baretoot_rate"
+        android:defaultValue="1"/>
+    <com.atakmap.android.gui.PanSwitchPreference
+        android:key="plugin_baretoot_plichat_only"
+        android:title="Only send PLI and Chat messages over Meshtastic"
+        android:summary="If enabled, only PLI and Chat messages will be sent over Meshtastic"
+        android:dialogTitle="Only send PLI and Chat messages over Meshtastic"
+        android:defaultValue="false"/>
+    <com.atakmap.android.gui.PanSwitchPreference
+        android:key="plugin_baretoot_voice"
+        android:title="Use Text to Speech for incoming messages"
+        android:summary="If enabled, TTS will be used on Meshtastic text messages"
+        android:dialogTitle="Use Text to Speech for incoming messages"
+        android:defaultValue="false"/>
+    <com.atakmap.android.gui.PanEditTextPreference
+        android:key="plugin_baretoot_ptt"
+        android:title="PTT KeyCode"
+        android:summary="Enter your PTT KeyCode value"
+        android:dialogTitle="PTT KeyCode"
+        android:inputType="number"
+        android:defaultValue="79"/>
+    <com.atakmap.android.gui.PanEditTextPreference
+        android:key="plugin_baretoot_channel"
+        android:title="Meshtastic Channel index"
+        android:summary="Specify the Meshtastic channel index to use"
+        android:dialogTitle="Meshtastic Channel"
+        android:inputType="number"
+        android:defaultValue="0" />
+    <com.atakmap.android.gui.PanEditTextPreference
+        android:key="plugin_baretoot_hop_limit"
+        android:title="Meshtastic Hop Limit"
+        android:summary="Specify the Meshtastic hop limit (max 8)"
+        android:dialogTitle="Meshtastic Hop Limit"
+        android:inputType="number"
+        android:defaultValue="3" />
+    <com.atakmap.android.gui.PanSwitchPreference
+        android:key="plugin_baretoot_switch"
+        android:title="Allow SWITCH command"
+        android:summary="If enabled, the plugin will listen for file transfer commands"
+        android:dialogTitle="Allow SWITCH command"
+        android:defaultValue="false"/>
+</PreferenceScreen>

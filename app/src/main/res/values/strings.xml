@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App -->
+    <string name="app_name">Bare Toot Plugin</string>
+    <!-- description -->
+    <string name="app_desc">This plugin can leverage the Digi XBEE SX Development Kit</string>
+
+
+    <string name="preferences_title">BareToot Preferences</string>
+    <string name="preferences_summary">summary</string>
+    <string name="preferences_dialogTitle">title</string>
+    <string name="preferences_distanceTitle">title</string>
+    <string name="baretoot_preferences">baretoot_preferences</string>
+
+
+</resources>

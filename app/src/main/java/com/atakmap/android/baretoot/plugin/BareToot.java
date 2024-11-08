@@ -1,0 +1,380 @@
+
+package com.atakmap.android.baretoot.plugin;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.Environment;
+import android.preference.PreferenceManager;
+import android.view.View;
+import android.widget.Button;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import com.atak.plugins.impl.PluginContextProvider;
+import com.atak.plugins.impl.PluginLayoutInflater;
+import com.atakmap.android.cot.CotMapComponent;
+import com.atakmap.android.data.URIContentManager;
+import com.atakmap.android.maps.MapView;
+import com.atakmap.android.baretoot.plugin.R;
+import com.atakmap.app.preferences.ToolsPreferenceFragment;
+import com.atakmap.comms.CommsMapComponent;
+import com.atakmap.coremap.cot.event.CotDetail;
+import com.atakmap.coremap.cot.event.CotEvent;
+import com.atakmap.coremap.log.Log;
+
+import com.digi.xbee.api.RemoteXBeeDevice;
+import com.digi.xbee.api.android.XBeeDevice;
+import com.digi.xbee.api.exceptions.XBeeException;
+import com.digi.xbee.api.listeners.IDataReceiveListener;
+import com.digi.xbee.api.listeners.IDiscoveryListener;
+import com.digi.xbee.api.models.XBee64BitAddress;
+import com.digi.xbee.api.models.XBeeMessage;
+
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+import java.util.Locale;
+import java.util.Random;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+import gov.tak.api.plugin.IPlugin;
+import gov.tak.api.plugin.IServiceController;
+import gov.tak.api.ui.IHostUIService;
+import gov.tak.api.ui.Pane;
+import gov.tak.api.ui.PaneBuilder;
+import gov.tak.api.ui.ToolbarItem;
+import gov.tak.api.ui.ToolbarItemAdapter;
+import gov.tak.platform.marshal.MarshalManager;
+
+public class BareToot implements IPlugin,
+        CommsMapComponent.PreSendProcessor,
+        IDiscoveryListener,
+        IDataReceiveListener {
+
+    IServiceController serviceController;
+    Context pluginContext;
+    IHostUIService uiService;
+    ToolbarItem toolbarItem;
+    Pane templatePane;
+    Button connect;
+    TextView status, discovered;
+    private static final String TAG = "BareToot";
+    private static XBeeDevice myXBeeDevice = null;
+    private boolean connected = false;
+    private StringBuffer cotBuf = new StringBuffer();
+    private byte[] zipBuf = new byte[0];
+    ScheduledExecutorService scheduleTaskExecutor = Executors.newScheduledThreadPool(1);
+    private View mainView;
+    private BareTootSender baretootSender;
+    private SharedPreferences prefs;
+    private SharedPreferences.Editor editor;
+    private int mpSize = 0;
+    public BareToot(IServiceController serviceController) {
+        this.serviceController = serviceController;
+        final PluginContextProvider ctxProvider = serviceController
+                .getService(PluginContextProvider.class);
+        if (ctxProvider != null) {
+            pluginContext = ctxProvider.getPluginContext();
+            pluginContext.setTheme(R.style.ATAKPluginTheme);
+        }
+
+        // obtain the UI service
+        uiService = serviceController.getService(IHostUIService.class);
+
+        // initialize the toolbar button for the plugin
+
+        // create the button
+        toolbarItem = new ToolbarItem.Builder(
+                pluginContext.getString(R.string.app_name),
+                MarshalManager.marshal(
+                        pluginContext.getResources().getDrawable(R.drawable.ic_launcher),
+                        android.graphics.drawable.Drawable.class,
+                        gov.tak.api.commons.graphics.Bitmap.class))
+                .setListener(new ToolbarItemAdapter() {
+                    @Override
+                    public void onClick(ToolbarItem item) {
+                        showPane();
+                    }
+                })
+                .build();
+
+
+        ToolsPreferenceFragment.register(
+                new ToolsPreferenceFragment.ToolPreference(
+                        pluginContext.getString(R.string.preferences_title),
+                        pluginContext.getString(R.string.preferences_summary),
+                        pluginContext.getString(R.string.baretoot_preferences),
+                        pluginContext.getResources().getDrawable(R.drawable.ic_launcher),
+                        new BareTootPluginPreferenceFragment(
+                                pluginContext)));
+
+        mainView = PluginLayoutInflater.inflate(pluginContext, R.layout.main_layout, null);
+        CommsMapComponent.getInstance().registerPreSendProcessor(this);
+        URIContentManager.getInstance().registerSender(baretootSender = new BareTootSender(MapView.getMapView(), pluginContext));
+        prefs = PreferenceManager.getDefaultSharedPreferences(MapView.getMapView().getContext());
+        editor = prefs.edit();
+    }
+
+    @Override
+    public void onStart() {
+        // the plugin is starting, add the button to the toolbar
+        if (uiService == null)
+            return;
+
+        uiService.addToolbarItem(toolbarItem);
+        editor.putBoolean("plugin_baretoot_file_transfer", false);
+        editor.apply();
+
+        if (myXBeeDevice == null)
+            // TODO: Is baudrate 9600 correct?
+            myXBeeDevice = new XBeeDevice(MapView.getMapView().getContext(), 9600);
+
+        if (!connected) {
+            Log.d(TAG, "Setting up XBee");
+            status = mainView.findViewById(R.id.status);
+            discovered = mainView.findViewById(R.id.discovered);
+            connect = mainView.findViewById(R.id.connect);
+            connect.setOnClickListener(v -> {
+                connected = myXBeeDevice.isOpen();
+                if (connected) {
+                    Toast.makeText(MapView.getMapView().getContext(), "Disconnecting from XBee device...", Toast.LENGTH_SHORT).show();
+                    // close the connection
+                    if (myXBeeDevice.isOpen()) {
+                        myXBeeDevice.getNetwork().stopDiscoveryProcess();
+                        scheduleTaskExecutor.shutdownNow();
+                        myXBeeDevice.close();
+                    }
+                    connected = false;
+                    connect.setText("Connect");
+                    status.setText("");
+                    discovered.setText("");
+                } else {
+                    Toast.makeText(MapView.getMapView().getContext(), "Connecting to XBee device...", Toast.LENGTH_SHORT).show();
+                    new Thread(() -> {
+                        // open the connection
+                        try {
+                            Log.d(TAG, "Opening XBee device");
+                            myXBeeDevice.open();
+                            connected = myXBeeDevice.isOpen();
+                            Log.d(TAG, "Connected to " + myXBeeDevice.getNodeID());
+                            // TODO: Make these plugin preferences
+                            myXBeeDevice.getNetwork().setDiscoveryTimeout(10000);
+                            myXBeeDevice.setReceiveTimeout(10000);
+
+                            myXBeeDevice.addDataListener(this);
+                            myXBeeDevice.getNetwork().addDiscoveryListener(this);
+                            myXBeeDevice.getNetwork().startDiscoveryProcess();
+                            ((Activity) MapView.getMapView().getContext()).runOnUiThread(() -> {
+                                Toast.makeText(MapView.getMapView().getContext(), "Connected", Toast.LENGTH_SHORT).show();
+                                connect.setText(connected ? "Disconnect" : "Connect");
+                                status.setText("Local XBee Device Details:\nNode ID: " + myXBeeDevice.getNodeID() + "\n" + "Firmware: " + myXBeeDevice.getFirmwareVersion() + "\n" + "Address: " + myXBeeDevice.get64BitAddress().toString());
+                                Toast.makeText(MapView.getMapView().getContext(), "Discovery in progress...", Toast.LENGTH_SHORT).show();
+                                discovered.setText("Discovery in progress...");
+                            });
+                        } catch (XBeeException e) {
+                            e.printStackTrace();
+                            ((Activity) MapView.getMapView().getContext()).runOnUiThread(() -> {
+                                Toast.makeText(MapView.getMapView().getContext(), "Failed to connect", Toast.LENGTH_SHORT).show();
+                            });
+                        }
+                    }).start();
+                }
+            });
+
+            // TODO: Make this a plugin preference
+            // run thread to discover new devices
+            if (scheduleTaskExecutor.isShutdown()) {
+                Log.d(TAG, "Starting discovery thread");
+                scheduleTaskExecutor.scheduleAtFixedRate(() -> {
+                    if (!connected)
+                        return;
+                    if (myXBeeDevice.getNetwork().isDiscoveryRunning())
+                        return;
+                    myXBeeDevice.getNetwork().startDiscoveryProcess();
+                }, 0, 30, TimeUnit.MINUTES);
+            }
+        }
+    }
+
+    @Override
+    public void onStop() {
+        // the plugin is stopping, remove the button from the toolbar
+        if (uiService == null)
+            return;
+
+        URIContentManager.getInstance().unregisterSender(baretootSender);
+        uiService.removeToolbarItem(toolbarItem);
+        scheduleTaskExecutor.shutdownNow();
+        if (myXBeeDevice.isOpen())
+            myXBeeDevice.close();
+        editor.putBoolean("plugin_baretoot_file_transfer", false);
+        editor.apply();
+    }
+
+    private void showPane() {
+        // instantiate the plugin view if necessary
+        if(templatePane == null) {
+            // Remember to use the PluginLayoutInflator if you are actually inflating a custom view
+            // In this case, using it is not necessary - but I am putting it here to remind
+            // developers to look at this Inflator
+
+            templatePane = new PaneBuilder(mainView)
+                    // relative location is set to default; pane will switch location dependent on
+                    // current orientation of device screen
+                    .setMetaValue(Pane.RELATIVE_LOCATION, Pane.Location.Default)
+                    // pane will take up 50% of screen width in landscape mode
+                    .setMetaValue(Pane.PREFERRED_WIDTH_RATIO, 0.5D)
+                    // pane will take up 50% of screen height in portrait mode
+                    .setMetaValue(Pane.PREFERRED_HEIGHT_RATIO, 0.5D)
+                    .build();
+        }
+
+        // if the plugin pane is not visible, show it!
+        if(!uiService.isPaneVisible(templatePane)) {
+            uiService.showPane(templatePane, null);
+        }
+    }
+
+    @Override
+    public void processCotEvent(CotEvent cotEvent, String[] strings) {
+        if (!connected) {
+            Log.d(TAG, "XBee not connected");
+            return;
+        }
+
+        if (prefs.getBoolean("plugin_baretoot_file_transfer", false)) {
+            Log.d(TAG, "File transfer in progress");
+            return;
+        }
+
+        // TODO: Is this necessary?
+        if (myXBeeDevice.getNetwork().isDiscoveryRunning()) {
+            Log.d(TAG, "Discovery in progress");
+            return;
+        }
+
+        if (connected && myXBeeDevice.getNetwork().getDevices().size() > 0) {
+            new Thread(() -> {
+                try {
+                    String data = cotEvent.toString();
+                    // split data into 256 byte strings
+                    for (int i = 0; i < data.length(); i += 256) {
+                        String chunk = data.substring(i, Math.min(data.length(), i + 256));
+                        myXBeeDevice.sendBroadcastData(chunk.getBytes());
+                    }
+                } catch (XBeeException e) {
+                    Log.e(TAG, "Error sending data to XBee device", e);
+                }
+            }).start();
+        }
+    }
+
+    public boolean endsWith(byte[] needle, byte[] haystack) {
+        if (needle.length > haystack.length)
+            return false;
+        for (int i = 0; i < needle.length; i++) {
+            if (needle[needle.length - i - 1] != haystack[haystack.length - i - 1])
+                return false;
+        }
+        return true;
+    }
+
+    public byte[] append(byte[] a, byte[] b) {
+        byte[] result = new byte[a.length + b.length];
+        for (int i = 0; i < a.length; i++)
+            result[i] = a[i];
+        for (int i = 0; i < b.length; i++)
+            result[a.length + i] = b[i];
+        return result;
+    }
+
+    @Override
+    public void dataReceived(XBeeMessage xbeeMessage) {
+        XBee64BitAddress address = xbeeMessage.getDevice().get64BitAddress();
+        byte[] raw = xbeeMessage.getData();
+        String data = new String(raw, StandardCharsets.UTF_8);
+        Log.d(TAG, "Received data from " + address + ": " + data.substring(0,4));
+
+        if (data.startsWith("PK") || zipBuf.length > 0) {
+            // handle zip data
+            zipBuf = append(zipBuf, raw);
+            if (!prefs.getBoolean("plugin_baretoot_file_transfer", false)) {
+                editor.putBoolean("plugin_baretoot_file_transfer", true);
+                editor.apply();
+            }
+        } else if (data.startsWith("<?xml") || cotBuf.length() > 0) {
+            // handle CoT data
+            cotBuf.append(data);
+        } else {
+            Log.d(TAG, "Unexpected data received: " + data);
+            return;
+        }
+
+        // are we done receiving the zip file
+        if (endsWith("Created by ATAK. Mission Package version 2".getBytes(StandardCharsets.UTF_8), zipBuf)) {
+            // drop the zip file so atak can process it
+            Log.d(TAG, "Received data package with length: " + zipBuf.length);
+            try (FileOutputStream fos = new FileOutputStream(String.format(Locale.US, Environment.getExternalStorageDirectory().getAbsolutePath()+"/atak/tools/datapackage/baretoot_%X.zip", new Random().nextInt()))) {
+                fos.write(zipBuf);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            // done
+            zipBuf = new byte[0];
+            editor.putBoolean("plugin_baretoot_file_transfer", false);
+            editor.apply();
+        // are we done receiving the cot data
+        } else if (cotBuf.toString().endsWith("</event>")) {
+            try {
+                CotEvent cotEvent = CotEvent.parse(cotBuf.toString());
+                if (cotEvent.isValid()) {
+                    CotDetail detail = cotEvent.getDetail();
+                    CotDetail contact = detail.getChild("contact");
+                    if (contact != null) {
+                        detail.removeChild(contact);
+                        contact.setAttribute("endpoint", address.toString() + ":0");
+                        detail.addChild(contact);
+                        cotEvent.setDetail(detail);
+                        Log.d(TAG, "Modified CotEvent: " + cotEvent);
+                    }
+                    CotMapComponent.getInternalDispatcher().dispatch(cotEvent);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error parsing CoT data", e);
+            }
+            cotBuf.setLength(0);
+        }
+    }
+
+    @Override
+    public void deviceDiscovered(RemoteXBeeDevice discoveredDevice) {
+        Log.d(TAG, "Discovered device: " + discoveredDevice.toString());
+        ((Activity) MapView.getMapView().getContext()).runOnUiThread(() -> {
+            discovered.setText("Discovered devices: " + myXBeeDevice.getNetwork().getDevices().toString());
+        });
+    }
+
+    @Override
+    public void discoveryError(String error) {
+        Log.e(TAG, "Discovery error: " + error);
+        ((Activity) MapView.getMapView().getContext()).runOnUiThread(() -> {
+            discovered.setText("Discovery error: " + error);
+        });
+    }
+
+    @Override
+    public void discoveryFinished(String error) {
+        Log.d(TAG, "Discovery finished: " + (error == null ? "OK" : "Error: " + error));
+        ((Activity) MapView.getMapView().getContext()).runOnUiThread(() -> {
+            Toast.makeText(MapView.getMapView().getContext(),"Discovery finished: " + (error == null ? "OK" : "Error: " + error), Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    public static XBeeDevice getBeeDevice() {
+        return myXBeeDevice;
+    }
+}
