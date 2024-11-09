@@ -261,6 +261,7 @@ public class AndroidUSBInterface implements IConnectionInterface {
 				throw new PermissionDeniedException("User didn't grant permissions to access XBee device.");
 			}
 		}
+
 		// Start the USB connection.
 		startUSBConnection();
 	}
@@ -443,8 +444,22 @@ public class AndroidUSBInterface implements IConnectionInterface {
 		if (usbConnection == null)
 			usbConnection = usbManager.openDevice(usbDevice);
 		// Create the USB interface.
-		if (usbInterface == null)
-			usbInterface = usbDevice.getInterface(2);
+		if (usbInterface == null) {
+			int count = usbDevice.getInterfaceCount();
+			switch(count) {
+				case 1:
+					usbInterface = usbDevice.getInterface(0);
+					Log.d(TAG, "USB interface 0");
+					break;
+				case 4:
+					usbInterface = usbDevice.getInterface(2);
+					Log.d(TAG, "USB interface 2");
+					break;
+				default:
+					usbInterface = usbDevice.getInterface(0);
+					break;
+			}
+		}
 		// Claim USB interface.
 		if (!usbConnection.claimInterface(usbInterface, true)) 
 			throw new InterfaceInUseException("Could not get control of USB interface, it may be in use by other applications.");

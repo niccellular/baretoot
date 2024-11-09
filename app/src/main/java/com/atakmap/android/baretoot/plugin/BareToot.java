@@ -132,10 +132,10 @@ public class BareToot implements IPlugin,
         editor.putBoolean("plugin_baretoot_file_transfer", false);
         editor.apply();
 
-        if (myXBeeDevice == null)
+        if (myXBeeDevice == null) {
             // TODO: Is baudrate 9600 correct?
             myXBeeDevice = new XBeeDevice(MapView.getMapView().getContext(), 9600);
-
+        }
         if (!connected) {
             Log.d(TAG, "Setting up XBee");
             status = mainView.findViewById(R.id.status);
@@ -159,7 +159,6 @@ public class BareToot implements IPlugin,
                     new Thread(() -> {
                         // open the connection
                         try {
-                            Log.d(TAG, "Opening XBee device");
                             myXBeeDevice.open();
                             connected = myXBeeDevice.isOpen();
                             Log.d(TAG, "Connected to " + myXBeeDevice.getNodeID());
