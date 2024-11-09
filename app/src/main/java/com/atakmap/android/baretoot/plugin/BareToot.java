@@ -69,8 +69,6 @@ public class BareToot implements IPlugin,
     private static final String TAG = "BareToot";
     private static XBeeDevice myXBeeDevice = null;
     private boolean connected = false;
-    private StringBuffer cotBuf = new StringBuffer();
-    //private byte[] zipBuf = new byte[0];
     private HashMap<String, byte[]> deviceData = new HashMap<>();
     ScheduledExecutorService scheduleTaskExecutor = Executors.newScheduledThreadPool(1);
     private View mainView;

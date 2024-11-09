@@ -12,10 +12,8 @@ import com.atakmap.android.missionpackage.file.MissionPackageManifest;
 import com.atakmap.android.missionpackage.file.task.MissionPackageBaseTask;
 import com.atakmap.coremap.filesystem.FileSystemUtils;
 import com.atakmap.coremap.log.Log;
-import com.digi.xbee.api.RemoteXBeeDevice;
 import com.digi.xbee.api.android.XBeeDevice;
 import com.digi.xbee.api.exceptions.XBeeException;
-import com.digi.xbee.api.models.XBee64BitAddress;
 
 import java.io.File;
 import java.io.FileInputStream;
