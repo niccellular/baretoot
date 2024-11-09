@@ -36,7 +36,9 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -68,7 +70,8 @@ public class BareToot implements IPlugin,
     private static XBeeDevice myXBeeDevice = null;
     private boolean connected = false;
     private StringBuffer cotBuf = new StringBuffer();
-    private byte[] zipBuf = new byte[0];
+    //private byte[] zipBuf = new byte[0];
+    private HashMap<String, byte[]> deviceData = new HashMap<>();
     ScheduledExecutorService scheduleTaskExecutor = Executors.newScheduledThreadPool(1);
     private View mainView;
     private BareTootSender baretootSender;
@@ -310,6 +313,7 @@ public class BareToot implements IPlugin,
         return new String(hexChars);
     }
 
+    // TODO: add a timer to clear the buffer if the complete data is not received after sometime
     @Override
     public void dataReceived(XBeeMessage xbeeMessage) {
         XBee64BitAddress address = xbeeMessage.getDevice().get64BitAddress();
@@ -317,54 +321,56 @@ public class BareToot implements IPlugin,
         String data = new String(raw, StandardCharsets.UTF_8);
         Log.d(TAG, "Received data from " + address + ": " + data.substring(0,4));
 
-        if (data.startsWith("PK") || zipBuf.length > 0) {
-            // handle zip data
-            zipBuf = append(zipBuf, raw);
-            if (!prefs.getBoolean("plugin_baretoot_file_transfer", false)) {
-                editor.putBoolean("plugin_baretoot_file_transfer", true);
-                editor.apply();
-            }
-        } else if (data.startsWith("<?xml") || cotBuf.length() > 0) {
-            // handle CoT data
-            cotBuf.append(data);
+        // if the device is already in the map, append the data
+        if (deviceData.containsKey(address.toString()) && Objects.requireNonNull(deviceData.get(address.toString())).length > 0) {
+            byte[] old = deviceData.get(address.toString());
+            deviceData.put(address.toString(), append(old, raw));
+        // else add the device and data to the map, if the data is a zip file, set the flag
         } else {
-            Log.d(TAG, "Unexpected data received: " + data);
-            return;
+            deviceData.put(address.toString(), raw);
+            if (data.startsWith("PK")) {
+                if (!prefs.getBoolean("plugin_baretoot_file_transfer", false)) {
+                    editor.putBoolean("plugin_baretoot_file_transfer", true);
+                    editor.apply();
+                }
+            }
         }
 
-        // are we done receiving the zip file
-        if (endsWith("Created by ATAK. Mission Package version 2".getBytes(StandardCharsets.UTF_8), zipBuf)) {
-            // drop the zip file so atak can process it
-            Log.d(TAG, "Received data package with length: " + zipBuf.length);
-            try (FileOutputStream fos = new FileOutputStream(String.format(Locale.US, Environment.getExternalStorageDirectory().getAbsolutePath()+"/atak/tools/datapackage/baretoot_%X.zip", new Random().nextInt()))) {
-                fos.write(zipBuf);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            // done
-            zipBuf = new byte[0];
-            editor.putBoolean("plugin_baretoot_file_transfer", false);
-            editor.apply();
-        // are we done receiving the cot data
-        } else if (cotBuf.toString().endsWith("</event>")) {
-            try {
-                CotEvent cotEvent = CotEvent.parse(cotBuf.toString());
-                if (cotEvent.isValid()) {
-                    CotDetail detail = cotEvent.getDetail();
-                    CotDetail contact = detail.getChild("contact");
-                    if (contact != null) {
-                        detail.removeChild(contact);
-                        contact.setAttribute("endpoint", address.toString() + ":0");
-                        detail.addChild(contact);
-                        cotEvent.setDetail(detail);
-                        Log.d(TAG, "Modified CotEvent: " + cotEvent);
-                    }
-                    CotMapComponent.getInternalDispatcher().dispatch(cotEvent);
+        // check if we have received the complete data
+        for (String key : deviceData.keySet()) {
+            byte[] value = deviceData.get(key);
+            if (endsWith("Created by ATAK. Mission Package version 2".getBytes(StandardCharsets.UTF_8), value)) {
+                // drop the zip file so atak can process it
+                Log.d(TAG, "Received data package with length: " + value.length);
+                try (FileOutputStream fos = new FileOutputStream(String.format(Locale.US, Environment.getExternalStorageDirectory().getAbsolutePath()+"/atak/tools/datapackage/baretoot_%X.zip", new Random().nextInt()))) {
+                    fos.write(value);
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "Error parsing CoT data", e);
+                // done
+                deviceData.put(key, new byte[0]);
+                editor.putBoolean("plugin_baretoot_file_transfer", false);
+                editor.apply();
+            } else if (new String(value).endsWith("</event>")) {
+                try {
+                    CotEvent cotEvent = CotEvent.parse(new String(value));
+                    if (cotEvent.isValid()) {
+                        CotDetail detail = cotEvent.getDetail();
+                        CotDetail contact = detail.getChild("contact");
+                        if (contact != null) {
+                            detail.removeChild(contact);
+                            contact.setAttribute("endpoint", address + ":0");
+                            detail.addChild(contact);
+                            cotEvent.setDetail(detail);
+                            Log.d(TAG, "Modified CotEvent: " + cotEvent);
+                        }
+                        CotMapComponent.getInternalDispatcher().dispatch(cotEvent);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error parsing CoT data", e);
+                }
+                deviceData.put(key, new byte[0]);
             }
-            cotBuf.setLength(0);
         }
     }
 

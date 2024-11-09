@@ -222,9 +222,9 @@ android {
     }
 
     defaultConfig {
-        compileSdkVersion 32
+        compileSdkVersion 33
         minSdkVersion 28
-        targetSdkVersion 32
+        targetSdkVersion 33
 
         def runTasks = gradle.startParameter.taskNames
         if(runTasks.toString().contains('bundle')) {

@@ -12,9 +12,9 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        maven {
-            url 'https://ftp1.digi.com/support/m-repo/'
-        }
+        //maven {
+        //    url 'https://ftp1.digi.com/support/m-repo/'
+        //}
     }
 }
 
